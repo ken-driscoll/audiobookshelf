@@ -22,6 +22,97 @@ class CoverManager {
     }
   }
 
+  getCollectionCoverDirectory(collectionId) {
+    return Path.posix.join(global.MetadataPath, 'collections', collectionId)
+  }
+
+  /**
+   * @param {import('../models/Collection')} collection
+   * @param {*} coverFile - file object from req.files
+   * @returns {Promise<{error:string}|{cover:string}>}
+   */
+  async uploadCollectionCover(collection, coverFile) {
+    const extname = Path.extname(coverFile.name.toLowerCase())
+    if (!extname || !globals.SupportedImageTypes.includes(extname.slice(1))) {
+      return {
+        error: `Invalid image type ${extname} (Supported: ${globals.SupportedImageTypes.join(',')})`
+      }
+    }
+
+    const coverDirPath = this.getCollectionCoverDirectory(collection.id)
+    await fs.ensureDir(coverDirPath)
+
+    const coverFullPath = Path.posix.join(coverDirPath, `cover${extname}`)
+
+    const success = await coverFile
+      .mv(coverFullPath)
+      .then(() => true)
+      .catch((error) => {
+        Logger.error('[CoverManager] Failed to move collection cover file', coverFullPath, error)
+        return false
+      })
+
+    if (!success) {
+      return {
+        error: 'Failed to move cover into destination'
+      }
+    }
+
+    await this.removeOldCovers(coverDirPath, extname)
+    await CacheManager.purgeCoverCache(collection.id)
+
+    Logger.info(`[CoverManager] Uploaded collection cover "${coverFullPath}" for collection "${collection.name}"`)
+    return {
+      cover: coverFullPath
+    }
+  }
+
+  /**
+   * @param {string} url
+   * @param {import('../models/Collection')} collection
+   * @returns {Promise<{error:string}|{cover:string}>}
+   */
+  async downloadCollectionCoverFromUrl(url, collection) {
+    try {
+      const coverDirPath = this.getCollectionCoverDirectory(collection.id)
+      await fs.ensureDir(coverDirPath)
+
+      const temppath = Path.posix.join(coverDirPath, 'cover')
+      const success = await downloadImageFile(url, temppath)
+        .then(() => true)
+        .catch((err) => {
+          Logger.error(`[CoverManager] Download image file failed for "${url}"`, err)
+          return false
+        })
+      if (!success) {
+        return {
+          error: 'Failed to download image from url'
+        }
+      }
+
+      const imgtype = await this.checkFileIsValidImage(temppath, true)
+      if (imgtype.error) {
+        return imgtype
+      }
+
+      const coverFullPath = Path.posix.join(coverDirPath, `cover.${imgtype.ext}`)
+      await fs.rename(temppath, coverFullPath)
+
+      await this.removeOldCovers(coverDirPath, '.' + imgtype.ext)
+      await CacheManager.purgeCoverCache(collection.id)
+
+      Logger.info(`[CoverManager] Downloaded collection cover "${coverFullPath}" from url "${url}"`)
+      return {
+        cover: coverFullPath
+      }
+    } catch (error) {
+      Logger.error(`[CoverManager] Fetch collection cover from url "${url}" failed`, error)
+      return {
+        error: 'Failed to fetch image from url'
+      }
+    }
+  }
+
   getFilesInDirectory(dir) {
     try {
       return fs.readdir(dir)

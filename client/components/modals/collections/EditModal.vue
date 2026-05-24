@@ -10,7 +10,13 @@
         <form @submit.prevent="submitForm">
           <div class="flex flex-wrap">
             <div class="w-full flex justify-center mb-2 md:w-auto md:mb-0 md:block">
-              <covers-collection-cover :book-items="books" :width="200" :height="100 * bookCoverAspectRatio" :book-cover-aspect-ratio="bookCoverAspectRatio" />
+              <div class="relative group cursor-pointer" @click="showImageUploader = true">
+                <covers-collection-cover :collection="collection" :book-items="books" :width="200" :height="100 * bookCoverAspectRatio" :book-cover-aspect-ratio="bookCoverAspectRatio" />
+                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xs">
+                  <span class="material-symbols text-white text-3xl">edit</span>
+                </div>
+              </div>
+              <ui-btn v-if="collection.coverPath" small color="bg-error" type="button" class="mt-2 w-full" @click.stop="removeCover">{{ $strings.ButtonRemoveCover || 'Remove Cover' }}</ui-btn>
             </div>
             <div class="grow px-4">
               <ui-text-input-with-label v-model="newCollectionName" :label="$strings.LabelName" class="mb-2" />
@@ -30,14 +36,20 @@
           <div class="hover:bg-white/10 cursor-pointer h-11 w-11 flex items-center justify-center rounded-full" @click="showImageUploader = false">
             <span class="material-symbols text-4xl">arrow_back</span>
           </div>
-          <p class="ml-2 text-xl mb-1">Collection Cover Image</p>
+          <p class="ml-2 text-xl mb-1">{{ $strings.HeaderChangeCover || 'Collection Cover Image' }}</p>
         </div>
-        <div class="flex mb-4">
-          <ui-btn small class="mr-2">Upload</ui-btn>
-          <ui-text-input v-model="newCoverImage" class="grow" placeholder="Collection Cover Image" />
+
+        <!-- File upload -->
+        <div class="flex items-center mb-4">
+          <ui-btn small class="mr-2 shrink-0" @click="$refs.coverFileInput.click()">{{ $strings.ButtonUpload || 'Upload' }}</ui-btn>
+          <p class="text-gray-400 text-xs">{{ $strings.LabelOrEnterURL || 'or enter a URL:' }}</p>
+          <input ref="coverFileInput" type="file" accept="image/*" class="hidden" @change="coverFileSelected" />
         </div>
-        <div class="flex justify-end">
-          <ui-btn color="bg-success">Upload</ui-btn>
+
+        <!-- URL input -->
+        <div class="flex mb-6">
+          <ui-text-input v-model="newCoverUrl" class="grow mr-2" placeholder="https://..." />
+          <ui-btn small color="bg-success" :disabled="!newCoverUrl" @click="uploadCoverFromUrl">{{ $strings.ButtonSave || 'Save' }}</ui-btn>
         </div>
       </template>
     </div>
@@ -51,7 +63,8 @@ export default {
       processing: false,
       newCollectionName: null,
       newCollectionDescription: null,
-      showImageUploader: false
+      showImageUploader: false,
+      newCoverUrl: ''
     }
   },
   watch: {
@@ -92,6 +105,8 @@ export default {
     init() {
       this.newCollectionName = this.collectionName
       this.newCollectionDescription = this.collection.description || ''
+      this.showImageUploader = false
+      this.newCoverUrl = ''
     },
     removeClick() {
       const payload = {
@@ -147,6 +162,65 @@ export default {
           console.error('Failed to update collection', error)
           this.processing = false
           this.$toast.error(this.$strings.ToastFailedToUpdate)
+        })
+    },
+    coverFileSelected(event) {
+      const file = event.target.files?.[0]
+      if (!file) return
+
+      const formData = new FormData()
+      formData.append('cover', file)
+
+      this.processing = true
+      this.$axios
+        .post(`/api/collections/${this.collection.id}/cover`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        .then(() => {
+          this.showImageUploader = false
+          this.$toast.success(this.$strings.ToastCoverUpdateSuccess || 'Cover updated')
+        })
+        .catch((error) => {
+          console.error('Failed to upload cover', error)
+          this.$toast.error(this.$strings.ToastFailedToUpdate)
+        })
+        .finally(() => {
+          this.processing = false
+          event.target.value = ''
+        })
+    },
+    uploadCoverFromUrl() {
+      if (!this.newCoverUrl) return
+
+      this.processing = true
+      this.$axios
+        .$post(`/api/collections/${this.collection.id}/cover`, { url: this.newCoverUrl })
+        .then(() => {
+          this.showImageUploader = false
+          this.newCoverUrl = ''
+          this.$toast.success(this.$strings.ToastCoverUpdateSuccess || 'Cover updated')
+        })
+        .catch((error) => {
+          console.error('Failed to upload cover from url', error)
+          this.$toast.error(this.$strings.ToastFailedToUpdate)
+        })
+        .finally(() => {
+          this.processing = false
+        })
+    },
+    removeCover() {
+      this.processing = true
+      this.$axios
+        .$delete(`/api/collections/${this.collection.id}/cover`)
+        .then(() => {
+          this.$toast.success(this.$strings.ToastCoverRemoveSuccess || 'Cover removed')
+        })
+        .catch((error) => {
+          console.error('Failed to remove cover', error)
+          this.$toast.error(this.$strings.ToastRemoveFailed)
+        })
+        .finally(() => {
+          this.processing = false
         })
     }
   },

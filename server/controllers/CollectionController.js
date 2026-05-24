@@ -1,11 +1,15 @@
+const Path = require('path')
 const { Request, Response, NextFunction } = require('express')
 const Sequelize = require('sequelize')
 const Logger = require('../Logger')
 const SocketAuthority = require('../SocketAuthority')
 const Database = require('../Database')
 const htmlSanitizer = require('../utils/htmlSanitizer')
+const fs = require('../libs/fsExtra')
 
 const RssFeedManager = require('../managers/RssFeedManager')
+const CoverManager = require('../managers/CoverManager')
+const CacheManager = require('../managers/CacheManager')
 
 /**
  * @typedef RequestUserObject
@@ -422,6 +426,107 @@ class CollectionController {
       SocketAuthority.emitter('collection_updated', jsonExpanded)
     }
     res.json(jsonExpanded)
+  }
+
+  /**
+   * GET: /api/collections/:id/cover
+   *
+   * @param {CollectionControllerRequest} req
+   * @param {Response} res
+   */
+  async getCover(req, res) {
+    if (req.query.ts) res.set('Cache-Control', 'private, max-age=86400')
+
+    if (!req.collection.coverPath || !(await fs.pathExists(req.collection.coverPath))) {
+      return res.sendStatus(404)
+    }
+
+    const extname = Path.extname(req.collection.coverPath).toLowerCase().slice(1)
+    res.type(`image/${extname}`)
+    const readStream = fs.createReadStream(req.collection.coverPath)
+    readStream.on('error', (error) => {
+      Logger.error(`[CollectionController] getCover stream error: ${error.message}`)
+      if (!res.headersSent) res.sendStatus(404)
+    })
+    readStream.pipe(res)
+  }
+
+  /**
+   * POST: /api/collections/:id/cover
+   *
+   * @param {CollectionControllerRequest} req
+   * @param {Response} res
+   */
+  async uploadCover(req, res) {
+    if (!req.user.canUpload) {
+      Logger.warn(`[CollectionController] User "${req.user.username}" attempted to upload a cover without permission`)
+      return res.sendStatus(403)
+    }
+
+    let result = null
+    if (req.body?.url) {
+      result = await CoverManager.downloadCollectionCoverFromUrl(req.body.url, req.collection)
+    } else if (req.files?.cover) {
+      result = await CoverManager.uploadCollectionCover(req.collection, req.files.cover)
+    } else {
+      return res.status(400).send('Invalid request: no file or url')
+    }
+
+    if (result?.error) {
+      return res.status(400).send(result.error)
+    } else if (!result?.cover) {
+      return res.status(500).send('Unknown error occurred')
+    }
+
+    req.collection.coverPath = result.cover
+    req.collection.changed('coverPath', true)
+    req.collection.changed('updatedAt', true)
+    await req.collection.save()
+
+    // Sync active RSS feed cover
+    const feed = await Database.feedModel.findOne({ where: { entityId: req.collection.id } })
+    if (feed) {
+      feed.coverPath = result.cover
+      feed.imageURL = `/feed/${feed.slug}/cover${Path.extname(result.cover)}`
+      await feed.save()
+    }
+
+    const jsonExpanded = await req.collection.getOldJsonExpanded()
+    SocketAuthority.emitter('collection_updated', jsonExpanded)
+    res.json({ success: true, cover: result.cover })
+  }
+
+  /**
+   * DELETE: /api/collections/:id/cover
+   *
+   * @param {CollectionControllerRequest} req
+   * @param {Response} res
+   */
+  async removeCover(req, res) {
+    if (req.collection.coverPath) {
+      await CoverManager.removeFile(req.collection.coverPath)
+      req.collection.coverPath = null
+      req.collection.changed('coverPath', true)
+      req.collection.changed('updatedAt', true)
+      await req.collection.save()
+
+      await CacheManager.purgeCoverCache(req.collection.id)
+
+      // Sync active RSS feed — fall back to first book's cover
+      const feed = await Database.feedModel.findOne({ where: { entityId: req.collection.id } })
+      if (feed) {
+        const books = await req.collection.getBooksExpandedWithLibraryItem()
+        const firstBookWithCover = books.find((b) => b.coverPath)
+        feed.coverPath = firstBookWithCover?.coverPath || null
+        feed.imageURL = firstBookWithCover?.coverPath ? `/feed/${feed.slug}/cover${Path.extname(firstBookWithCover.coverPath)}` : `/Logo.png`
+        await feed.save()
+      }
+
+      const jsonExpanded = await req.collection.getOldJsonExpanded()
+      SocketAuthority.emitter('collection_updated', jsonExpanded)
+    }
+
+    res.sendStatus(200)
   }
 
   /**

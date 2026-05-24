@@ -205,6 +205,9 @@ class Feed extends Model {
       author += ' & more'
     }
 
+    // Prefer the collection's own custom cover over the first book's cover
+    const coverPath = collectionExpanded.coverPath || firstBookWithCover?.coverPath || null
+
     const feedObj = {
       slug,
       entityType: 'collection',
@@ -212,14 +215,14 @@ class Feed extends Model {
       entityUpdatedAt,
       serverAddress,
       feedURL: `/feed/${slug}`,
-      imageURL: firstBookWithCover?.coverPath ? `/feed/${slug}/cover${Path.extname(firstBookWithCover.coverPath)}` : `/Logo.png`,
+      imageURL: coverPath ? `/feed/${slug}/cover${Path.extname(coverPath)}` : `/Logo.png`,
       siteURL: `/collection/${collectionExpanded.id}`,
       title: collectionExpanded.name,
       description: collectionExpanded.description || '',
       author,
       podcastType: 'serial',
       explicit: booksWithTracks.some((book) => book.explicit), // If any book is explicit, the feed is explicit
-      coverPath: firstBookWithCover?.coverPath || null,
+      coverPath,
       userId
     }
 

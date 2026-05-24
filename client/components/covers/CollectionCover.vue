@@ -1,9 +1,5 @@
 <template>
   <div class="relative rounded-xs overflow-hidden" :style="{ width: width + 'px', height: height + 'px' }">
-    <!-- <div class="absolute top-0 left-0 w-full h-full rounded-xs overflow-hidden z-10">
-      <div class="w-full h-full border border-white/10" />
-    </div> -->
-
     <div v-if="hasOwnCover" class="w-full h-full relative rounded-xs">
       <div v-if="showCoverBg" class="bg-primary absolute top-0 left-0 w-full h-full">
         <div class="w-full h-full z-0" ref="coverBg" />
@@ -27,6 +23,10 @@
 <script>
 export default {
   props: {
+    collection: {
+      type: Object,
+      default: () => null
+    },
     bookItems: {
       type: Array,
       default: () => []
@@ -47,18 +47,34 @@ export default {
       return this.width / 240
     },
     hasOwnCover() {
-      return false
+      return !this.imageFailed && !!this.collection?.coverPath
     },
     fullCoverUrl() {
-      return null
+      if (!this.collection?.coverPath) return null
+      const base = this.$store?.state?.routerBasePath || ''
+      return `${base}/api/collections/${this.collection.id}/cover?ts=${this.collection.lastUpdate || Date.now()}`
     },
     books() {
       return this.bookItems || []
     }
   },
   methods: {
-    imageError() {},
-    imageLoaded() {}
+    imageError() {
+      this.imageFailed = true
+    },
+    imageLoaded() {
+      if (this.$refs.cover) {
+        const { naturalWidth, naturalHeight } = this.$refs.cover
+        const coverAspect = naturalWidth / naturalHeight
+        const containerAspect = this.width / this.height
+        this.showCoverBg = Math.abs(coverAspect - containerAspect) > 0.15
+      }
+    }
+  },
+  watch: {
+    'collection.coverPath'() {
+      this.imageFailed = false
+    }
   },
   mounted() {}
 }
