@@ -164,6 +164,10 @@ export default {
           this.$toast.error(this.$strings.ToastFailedToUpdate)
         })
     },
+    updateStoreCover(coverPath) {
+      const updated = Object.assign({}, this.collection, { coverPath, lastUpdate: Date.now() })
+      this.$store.commit('globals/setSelectedCollection', updated)
+    },
     coverFileSelected(event) {
       const file = event.target.files?.[0]
       if (!file) return
@@ -176,7 +180,8 @@ export default {
         .post(`/api/collections/${this.collection.id}/cover`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
-        .then(() => {
+        .then((response) => {
+          if (response.data?.cover) this.updateStoreCover(response.data.cover)
           this.showImageUploader = false
           this.$toast.success(this.$strings.ToastCoverUpdateSuccess || 'Cover updated')
         })
@@ -195,7 +200,8 @@ export default {
       this.processing = true
       this.$axios
         .$post(`/api/collections/${this.collection.id}/cover`, { url: this.newCoverUrl })
-        .then(() => {
+        .then((data) => {
+          if (data?.cover) this.updateStoreCover(data.cover)
           this.showImageUploader = false
           this.newCoverUrl = ''
           this.$toast.success(this.$strings.ToastCoverUpdateSuccess || 'Cover updated')
@@ -213,6 +219,7 @@ export default {
       this.$axios
         .$delete(`/api/collections/${this.collection.id}/cover`)
         .then(() => {
+          this.updateStoreCover(null)
           this.$toast.success(this.$strings.ToastCoverRemoveSuccess || 'Cover removed')
         })
         .catch((error) => {
