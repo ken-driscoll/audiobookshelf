@@ -313,6 +313,9 @@ export default {
     collectionUpdated(collection) {
       if (this.currentLibraryId !== collection.libraryId) return
       this.$store.commit('libraries/addUpdateCollection', collection)
+      if (this.$store.state.globals.selectedCollection?.id === collection.id) {
+        this.$store.commit('globals/setSelectedCollection', collection)
+      }
     },
     collectionRemoved(collection) {
       if (this.currentLibraryId !== collection.libraryId) return
