@@ -541,7 +541,7 @@ class CollectionController {
       if (!collection) {
         return res.status(404).send('Collection not found')
       }
-      if (!req.user.checkCanAccessLibrary(collection.libraryId)) {
+      if (req.user && !req.user.checkCanAccessLibrary(collection.libraryId)) {
         Logger.warn(`[CollectionController] User "${req.user.username}" attempted to access collection ${collection.id} in inaccessible library ${collection.libraryId}`)
         return res.status(404).send('Collection not found')
       }
