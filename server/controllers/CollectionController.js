@@ -493,7 +493,7 @@ class CollectionController {
 
     const jsonExpanded = await req.collection.getOldJsonExpanded()
     SocketAuthority.emitter('collection_updated', jsonExpanded)
-    res.json({ success: true, cover: result.cover })
+    res.json(jsonExpanded)
   }
 
   /**

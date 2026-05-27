@@ -164,9 +164,9 @@ export default {
           this.$toast.error(this.$strings.ToastFailedToUpdate)
         })
     },
-    updateStoreCover(coverPath) {
-      const updated = Object.assign({}, this.collection, { coverPath, lastUpdate: Date.now() })
-      this.$store.commit('globals/setSelectedCollection', updated)
+    applyUpdatedCollection(collection) {
+      this.$store.commit('globals/setSelectedCollection', collection)
+      this.$store.commit('libraries/addUpdateCollection', collection)
     },
     coverFileSelected(event) {
       const file = event.target.files?.[0]
@@ -181,7 +181,7 @@ export default {
           headers: { 'Content-Type': 'multipart/form-data' }
         })
         .then((response) => {
-          if (response.data?.cover) this.updateStoreCover(response.data.cover)
+          this.applyUpdatedCollection(response.data)
           this.showImageUploader = false
           this.$toast.success(this.$strings.ToastCoverUpdateSuccess || 'Cover updated')
         })
@@ -200,8 +200,8 @@ export default {
       this.processing = true
       this.$axios
         .$post(`/api/collections/${this.collection.id}/cover`, { url: this.newCoverUrl })
-        .then((data) => {
-          if (data?.cover) this.updateStoreCover(data.cover)
+        .then((collection) => {
+          this.applyUpdatedCollection(collection)
           this.showImageUploader = false
           this.newCoverUrl = ''
           this.$toast.success(this.$strings.ToastCoverUpdateSuccess || 'Cover updated')
@@ -219,7 +219,7 @@ export default {
       this.$axios
         .$delete(`/api/collections/${this.collection.id}/cover`)
         .then(() => {
-          this.updateStoreCover(null)
+          this.applyUpdatedCollection(Object.assign({}, this.collection, { coverPath: null, lastUpdate: Date.now() }))
           this.$toast.success(this.$strings.ToastCoverRemoveSuccess || 'Cover removed')
         })
         .catch((error) => {
